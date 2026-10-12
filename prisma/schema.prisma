@@ -1,0 +1,303 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum StockStatus {
+  IN_STOCK
+  OUT_OF_STOCK
+  ON_REQUEST
+}
+
+enum ProductCondition {
+  NEW
+  USED
+  REFURBISHED
+}
+
+enum StorageType {
+  NVME_SSD
+  SATA_SSD
+  HDD
+  EMMC
+  OTHER
+}
+
+enum OrderStatus {
+  NEW
+  CONTACTED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+enum AnalyticsEventType {
+  PAGE_VIEW
+  PRODUCT_VIEW
+  CONTACT_CLICK
+  ORDER_INTENT
+  ORDER_SUBMITTED
+}
+
+enum ContactChannel {
+  WHATSAPP
+  PHONE
+  FACEBOOK
+  INSTAGRAM
+  OTHER
+}
+
+enum ContactPlacement {
+  PRODUCT_PAGE
+  HEADER
+  FOOTER
+  FLOATING_BUTTON
+  ORDER_DIALOG
+  HOME_CTA
+}
+
+model Category {
+  id            String   @id @default(uuid()) @db.Uuid
+  parentId      String?  @db.Uuid
+  nameAr        String
+  nameEn        String
+  slug          String   @unique
+  descriptionAr String?
+  descriptionEn String?
+  imageUrl      String?
+  sortOrder     Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  parent          Category?        @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children        Category[]       @relation("CategoryHierarchy")
+  products        Product[]
+  analyticsEvents AnalyticsEvent[]
+
+  @@index([parentId, isActive, sortOrder])
+  @@index([isActive, sortOrder])
+}
+
+model Brand {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String
+  normalizedName String   @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  products Product[]
+}
+
+model Product {
+  id                 String            @id @default(uuid()) @db.Uuid
+  slug               String            @unique
+  sku                String?           @unique
+  name               String
+  brandId            String            @db.Uuid
+  categoryId         String            @db.Uuid
+  descriptionAr      String
+  descriptionEn      String?
+  shortDescriptionAr String?
+  shortDescriptionEn String?
+  priceUsdCents      Int
+  stockStatus        StockStatus
+  condition          ProductCondition?
+  isFeatured         Boolean           @default(false)
+  isActive           Boolean           @default(true)
+  extraSpecs         Json?             @db.JsonB
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  category        Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  brand           Brand            @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  laptopSpecs     LaptopSpecs?
+  images          ProductImage[]
+  orders          Order[]
+  analyticsEvents AnalyticsEvent[]
+
+  @@index([categoryId, isActive, priceUsdCents])
+  @@index([brandId, isActive])
+  @@index([isActive, isFeatured])
+  @@index([isActive, priceUsdCents])
+  @@index([isActive, stockStatus])
+}
+
+model LaptopSpecs {
+  productId     String   @id @db.Uuid
+  cpuBrand      String
+  cpuModel      String
+  cpuGeneration String?
+  ramGB         Int
+  gpuBrand      String?
+  gpuModel      String?
+  screenSize    Decimal? @db.Decimal(4, 1)
+  resolution    String?
+
+  product  Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  storages LaptopStorage[]
+}
+
+model LaptopStorage {
+  id         String      @id @default(uuid()) @db.Uuid
+  productId  String      @db.Uuid
+  type       StorageType
+  capacityGB Int
+  sortOrder  Int         @default(0)
+
+  laptopSpecs LaptopSpecs @relation(fields: [productId], references: [productId], onDelete: Cascade)
+
+  @@unique([productId, sortOrder])
+  @@index([type, capacityGB])
+}
+
+model ProductImage {
+  id        String   @id @default(uuid()) @db.Uuid
+  productId String   @db.Uuid
+  publicId  String
+  url       String
+  altAr     String?
+  altEn     String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, sortOrder])
+}
+
+model Order {
+  id                    String      @id @default(uuid()) @db.Uuid
+  customerName          String
+  customerPhone         String
+  city                  String?
+  note                  String?
+  productId             String?     @db.Uuid
+  productNameSnapshot   String
+  usdPriceCentsSnapshot Int
+  usdRateSnapshot       Int
+  sypPriceSnapshot      Int
+  status                OrderStatus @default(NEW)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  contactedAt           DateTime?
+  confirmedAt           DateTime?
+  completedAt           DateTime?
+  cancelledAt           DateTime?
+
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([productId, createdAt])
+  @@index([createdAt])
+}
+
+model AnalyticsEvent {
+  id         String             @id @default(uuid()) @db.Uuid
+  eventType  AnalyticsEventType
+  visitorId  String?
+  sessionId  String?
+  productId  String?            @db.Uuid
+  categoryId String?            @db.Uuid
+  channel    ContactChannel?
+  placement  ContactPlacement?
+  locale     String?
+  metadata   Json?              @db.JsonB
+  createdAt  DateTime           @default(now())
+
+  product  Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([eventType, createdAt])
+  @@index([productId, createdAt])
+  @@index([categoryId, createdAt])
+  @@index([createdAt])
+}
+
+model SiteSettings {
+  id                String   @id @default(uuid()) @db.Uuid
+  storeName         String
+  usdToSypRate      Int
+  whatsapp          String?
+  phone             String?
+  facebook          String?
+  instagram         String?
+  heroEnabled       Boolean  @default(false)
+  heroTitleAr       String?
+  heroTitleEn       String?
+  heroSubtitleAr    String?
+  heroSubtitleEn    String?
+  heroImageUrl      String?
+  heroImagePublicId String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model User {
+  id            String    @id
+  name          String
+  email         String
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  issuer                String
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([issuer, accountId], map: "account_issuer_accountId_uidx")
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
